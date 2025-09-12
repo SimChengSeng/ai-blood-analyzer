@@ -9,7 +9,7 @@ export default function ReportPreview({ content }) {
     html2pdf()
       .from(element)
       .set({
-        margin: 10,
+        margin: 15,
         filename: "lab_analysis_report.pdf",
         html2canvas: { scale: 2 },
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
@@ -28,34 +28,38 @@ export default function ReportPreview({ content }) {
         sx={{
           fontFamily: "Times New Roman, serif",
           color: "#000",
-          lineHeight: 1.5,
+          lineHeight: 1.6,
           "& h2": { textAlign: "center", marginBottom: 2 },
           "& h3": { marginTop: 2, marginBottom: 1 },
-          "& p, & li": { fontSize: "14px" },
+          "& p, & li": { fontSize: "13px" },
         }}
       >
         <h2>Medical Laboratory Analysis Report</h2>
 
         <h3>Patient Information</h3>
         <p>
-          <b>Name:</b> {content.patient?.name}
+          <b>Name:</b> {content.patient?.name || "Not specified"}
         </p>
         <p>
-          <b>Age:</b> {content.patient?.age}
+          <b>Age:</b> {content.patient?.age || "Not specified"}
         </p>
         <p>
-          <b>Sex:</b> {content.patient?.sex}
+          <b>Sex:</b> {content.patient?.sex || "Not specified"}
         </p>
         <p>
-          <b>Date:</b> {content.patient?.date}
+          <b>Date:</b> {content.patient?.date || "Not specified"}
         </p>
 
         <h3>Abnormal Findings</h3>
-        {content.abnormal_findings?.length ? (
+        {content.abnormal_findings?.length > 0 ? (
           <ul>
             {content.abnormal_findings.map((f, idx) => (
               <li key={idx}>
-                <b>{f.test}</b>: {f.result} (Ref: {f.reference_range})<br />
+                <b>{f.test}</b>: {f.result}
+                {f.reference_range && f.reference_range !== "Not provided"
+                  ? ` (Ref: ${f.reference_range})`
+                  : ""}
+                <br />
                 <i>{f.note}</i>
               </li>
             ))}
@@ -65,19 +69,20 @@ export default function ReportPreview({ content }) {
         )}
 
         <h3>Summary</h3>
-        <p>{content.summary}</p>
+        <p>{content.summary || "Not specified"}</p>
 
         <h3>Recommendations</h3>
-        <p>{content.recommendations}</p>
+        <p>{content.recommendations || "Not specified"}</p>
 
         <h3>Follow-up</h3>
-        <p>{content.follow_up}</p>
+        <p>{content.follow_up || "Not specified"}</p>
 
         <div
           style={{
             marginTop: "40px",
-            fontSize: "12px",
+            fontSize: "11px",
             textAlign: "center",
+            color: "#444",
           }}
         >
           <hr />

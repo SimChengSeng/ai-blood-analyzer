@@ -87,28 +87,54 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
         { role: "user", content: [{ type: "input_file", file_id: file.id }] },
       ],
       temperature: 0.4,
-    });
 
-    const txt =
-      response.output_text || response?.choices?.[0]?.message?.content || "";
+      // ✅ Force JSON output
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "lab_analysis_report",
+          schema: {
+            type: "object",
+            properties: {
+              patient: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  age: { type: "string" },
+                  sex: { type: "string" },
+                  date: { type: "string" },
+                },
+                required: ["name", "age", "sex", "date"],
+              },
+              abnormal_findings: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    test: { type: "string" },
+                    result: { type: "string" },
+                    reference_range: { type: "string" },
+                    note: { type: "string" },
+                  },
+                  required: ["test", "result"],
+                },
+              },
+              summary: { type: "string" },
+              recommendations: { type: "string" },
+              follow_up: { type: "string" },
+            },
+            required: ["patient", "summary", "recommendations", "follow_up"],
+          },
+        },
+      },
+    });
 
     fs.unlink(filePath, () => {}); // cleanup temp file
 
-    if (txt && txt.trim()) {
-      const parsed = extractJSON(txt);
-
-      if (!parsed) {
-        return res.status(500).json({ error: "AI returned invalid JSON." });
-      }
-
-      // 🟢 Ensure abnormal_findings always exists
-      if (!Array.isArray(parsed.abnormal_findings)) {
-        parsed.abnormal_findings = [];
-      }
-
-      return res.json({ report: parsed });
+    if (response.output_parsed) {
+      return res.json({ report: response.output_parsed });
     } else {
-      return res.status(500).json({ error: "AI returned empty report" });
+      return res.status(500).json({ error: "AI returned no structured JSON" });
     }
   } catch (err) {
     fs.unlink(filePath, () => {});
