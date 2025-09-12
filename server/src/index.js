@@ -78,64 +78,106 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
       purpose: "assistants",
     });
 
-    const prompt = buildPrompt();
+    let response;
 
-    const response = await openai.responses.create({
-      model: "gpt-4o-mini",
-      input: [
-        { role: "user", content: [{ type: "input_text", text: prompt }] },
-        { role: "user", content: [{ type: "input_file", file_id: file.id }] },
-      ],
-      temperature: 0.4,
-
-      // ✅ Force JSON output
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "lab_analysis_report",
-          schema: {
-            type: "object",
-            properties: {
-              patient: {
-                type: "object",
-                properties: {
-                  name: { type: "string" },
-                  age: { type: "string" },
-                  sex: { type: "string" },
-                  date: { type: "string" },
-                },
-                required: ["name", "age", "sex", "date"],
-              },
-              abnormal_findings: {
-                type: "array",
-                items: {
+    try {
+      // ✅ Try with schema enforcement
+      response = await openai.responses.create({
+        model: "gpt-4o-mini",
+        input: [
+          {
+            role: "user",
+            content: [{ type: "input_text", text: buildPrompt() }],
+          },
+          { role: "user", content: [{ type: "input_file", file_id: file.id }] },
+        ],
+        temperature: 0.4,
+        text: {
+          format: "json_schema",
+          json_schema: {
+            name: "lab_analysis_report",
+            schema: {
+              type: "object",
+              properties: {
+                patient: {
                   type: "object",
                   properties: {
-                    test: { type: "string" },
-                    result: { type: "string" },
-                    reference_range: { type: "string" },
-                    note: { type: "string" },
+                    name: { type: "string" },
+                    age: { type: "string" },
+                    sex: { type: "string" },
+                    date: { type: "string" },
                   },
-                  required: ["test", "result"],
+                  required: ["name", "age", "sex", "date"],
                 },
+                abnormal_findings: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      test: { type: "string" },
+                      result: { type: "string" },
+                      reference_range: { type: "string" },
+                      note: { type: "string" },
+                    },
+                    required: ["test", "result"],
+                  },
+                },
+                summary: { type: "string" },
+                recommendations: { type: "string" },
+                follow_up: { type: "string" },
               },
-              summary: { type: "string" },
-              recommendations: { type: "string" },
-              follow_up: { type: "string" },
+              required: ["patient", "summary", "recommendations", "follow_up"],
             },
-            required: ["patient", "summary", "recommendations", "follow_up"],
           },
         },
-      },
-    });
+      });
+    } catch (err) {
+      // ❌ If schema not supported → fallback to plain JSON text mode
+      if (err.message.includes("Unknown parameter")) {
+        console.warn(
+          "⚠️ Schema mode not supported, falling back to plain JSON parsing."
+        );
+        response = await openai.responses.create({
+          model: "gpt-4o-mini",
+          input: [
+            {
+              role: "user",
+              content: [{ type: "input_text", text: buildPrompt() }],
+            },
+            {
+              role: "user",
+              content: [{ type: "input_file", file_id: file.id }],
+            },
+          ],
+          temperature: 0.4,
+        });
+      } else {
+        throw err;
+      }
+    }
 
     fs.unlink(filePath, () => {}); // cleanup temp file
 
+    let parsed;
+
     if (response.output_parsed) {
-      return res.json({ report: response.output_parsed });
+      parsed = response.output_parsed;
     } else {
-      return res.status(500).json({ error: "AI returned no structured JSON" });
+      const txt =
+        response.output_text || response?.choices?.[0]?.message?.content || "";
+      parsed = extractJSON(txt);
     }
+
+    if (!parsed) {
+      return res.status(500).json({ error: "AI returned invalid JSON." });
+    }
+
+    // 🟢 Ensure abnormal_findings always exists
+    if (!Array.isArray(parsed.abnormal_findings)) {
+      parsed.abnormal_findings = [];
+    }
+
+    return res.json({ report: parsed });
   } catch (err) {
     fs.unlink(filePath, () => {});
     console.error("❌ Analysis failed:", err.message);
