@@ -17,6 +17,7 @@ export default function ReportPreview({ content }) {
       .save();
   };
 
+  // 🔹 Fixed categories (AI might output "LIVER FUNCTION" instead of "Liver Function")
   const categoryOrder = [
     "Haematology",
     "Iron Status",
@@ -32,6 +33,9 @@ export default function ReportPreview({ content }) {
     "Urinalysis",
     "Other",
   ];
+
+  // 🔹 Normalize case (so "LIVER FUNCTION" == "Liver Function")
+  const normalize = (str) => str?.toLowerCase().replace(/\s+/g, " ").trim();
 
   return (
     <Paper elevation={3} sx={{ mt: 4, p: 3 }}>
@@ -52,6 +56,7 @@ export default function ReportPreview({ content }) {
       >
         <h2>Medical Laboratory Analysis Report</h2>
 
+        {/* Patient Info */}
         <h3>Patient Information</h3>
         <p>
           <b>Name:</b> {content.patient?.name || "Not specified"}
@@ -70,7 +75,7 @@ export default function ReportPreview({ content }) {
         <h3>Detailed Lab Category Summaries</h3>
         {categoryOrder.map((cat) => {
           const section = content.categorized_analysis?.find(
-            (c) => c.category === cat
+            (c) => normalize(c.category) === normalize(cat)
           );
           if (!section) return null;
 
@@ -88,7 +93,10 @@ export default function ReportPreview({ content }) {
           <ul>
             {content.abnormal_findings.map((f, idx) => (
               <li key={idx}>
-                <b>{f.test}</b>: {f.result}
+                <b>
+                  {f.category} – {f.test}
+                </b>
+                : {f.result}
                 {f.reference_range && f.reference_range !== "Not provided"
                   ? ` (Ref: ${f.reference_range})`
                   : ""}
@@ -101,7 +109,7 @@ export default function ReportPreview({ content }) {
           <p>No abnormal findings detected.</p>
         )}
 
-        {/* Summary */}
+        {/* Overall Summary */}
         <h3>Overall Summary</h3>
         <p>{content.summary || "Not specified"}</p>
 
