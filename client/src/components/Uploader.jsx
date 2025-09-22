@@ -9,6 +9,9 @@ import {
 } from "@mui/material";
 import ReportPreview from "./ReportPreview";
 
+// ✅ Read API base from env (local vs production)
+const API_BASE = import.meta.env.VITE_API_BASE || "";
+
 export default function Uploader() {
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -29,15 +32,23 @@ export default function Uploader() {
       const form = new FormData();
       form.append("file", file);
 
-      const res = await fetch("/api/analyze", {
+      const res = await fetch(`${API_BASE}/api/analyze`, {
         method: "POST",
         body: form,
       });
 
-      const json = await res.json();
+      const text = await res.text();
+      console.log("Raw backend response:", text);
+
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        throw new Error("Backend did not return valid JSON");
+      }
+
       if (!res.ok) throw new Error(json.error || "Failed to analyze");
 
-      // ✅ Backend now sends clean JSON
       setReport(json.report);
     } catch (e) {
       setError(e.message);
