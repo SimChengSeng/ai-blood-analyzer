@@ -9,8 +9,9 @@ import path from "path";
 const app = express();
 app.use(cors());
 
+// ✅ Store files in /tmp (Render safe)
 const storage = multer.diskStorage({
-  destination: "uploads/",
+  destination: "/tmp",
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname) || ".pdf";
     cb(null, Date.now() + ext);
@@ -21,64 +22,56 @@ const upload = multer({ storage });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const PORT = process.env.PORT || 3001;
 
-// 🔹 Optimized prompt to reduce token usage
-function buildPrompt() {
-  return `
-You are a clinical assistant specialized in interpreting blood test results.
-Analyze the attached blood test report and return ONLY valid JSON (no text outside JSON).
+// 🔹 Prompt builder
+function buildPrompt(note = "") {
+  return `You are a clinical assistant specialized in interpreting blood test results. 
+Analyze the attached blood test report and return ONLY a JSON object (no extra text).
 
-Keep responses concise:
-- Category summary: max 1–2 sentences, only if relevant (skip normal categories).
-- Overall summary: max 2–3 sentences.
-- Recommendations: max 1 sentence.
-- Follow-up: max 1 sentence.
+JSON format must be:
 
-Schema:
 {
-  "patient": { "name": "string", "age": "string", "sex": "string", "date": "string" },
+  "patient": {
+    "name": "string or 'Not specified'",
+    "age": "string or 'Not specified'",
+    "sex": "string or 'Not specified'",
+    "date": "string or 'Not specified'"
+  },
   "abnormal_findings": [
-    { "category": "string", "test": "string", "result": "string", "reference_range": "string", "note": "string" }
+    {
+      "test": "string",
+      "result": "string",
+      "reference_range": "string or 'Not provided'",
+      "note": "string explanation why abnormal"
+    }
   ],
-  "categorized_analysis": [
-    { "category": "string", "summary": "string (1–2 concise sentences, only if relevant)" }
-  ],
-  "summary": "string (2–3 sentences max)",
-  "recommendations": "string (1 sentence max)",
-  "follow_up": "string (1 sentence max)"
-}
-  `;
+  "summary": "Concise clinical summary (2–3 sentences)",
+  "recommendations": "Further tests or lifestyle/medication considerations",
+  "follow_up": "Timeline for follow-up (e.g. 2 weeks)"
 }
 
-// 🔹 Fallback JSON cleanup
-function safeParseJSON(text) {
-  if (!text) return null;
+${note}`;
+}
 
-  try {
-    return JSON.parse(text);
-  } catch {}
-
+// 🔹 Extract JSON safely
+function extractJSON(text) {
   const match = text.match(/\{[\s\S]*\}/);
   if (match) {
-    let cleaned = match[0]
-      .replace(/(\r\n|\n|\r)/gm, " ")
-      .replace(/'/g, '"')
-      .replace(/,\s*}/g, "}")
-      .replace(/,\s*]/g, "]");
-
     try {
-      return JSON.parse(cleaned);
+      return JSON.parse(match[0]);
     } catch (err) {
-      console.error("❌ Still invalid JSON after cleanup:", err.message);
+      console.error("❌ JSON parse failed:", err.message);
     }
   }
   return null;
 }
 
+// 🔹 API Route
 app.post("/api/analyze", upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
   const filePath = req.file.path;
 
   try {
+    // Upload PDF to OpenAI
     const file = await openai.files.create({
       file: fs.createReadStream(filePath),
       purpose: "assistants",
@@ -92,23 +85,31 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
         { role: "user", content: [{ type: "input_text", text: prompt }] },
         { role: "user", content: [{ type: "input_file", file_id: file.id }] },
       ],
-      temperature: 0.3,
+      temperature: 0.4,
     });
+
+    const txt =
+      response.output_text || response?.choices?.[0]?.message?.content || "";
 
     fs.unlink(filePath, () => {}); // cleanup
 
-    const parsed = safeParseJSON(response.output_text);
+    if (txt && txt.trim()) {
+      const parsed = extractJSON(txt);
 
-    if (parsed) {
+      if (!parsed) {
+        return res
+          .status(500)
+          .json({ error: "AI returned invalid JSON or empty response" });
+      }
+
+      // Ensure abnormal_findings is always an array
       if (!Array.isArray(parsed.abnormal_findings)) {
         parsed.abnormal_findings = [];
       }
-      if (!Array.isArray(parsed.categorized_analysis)) {
-        parsed.categorized_analysis = [];
-      }
+
       return res.json({ report: parsed });
     } else {
-      return res.status(500).json({ error: "AI returned invalid JSON" });
+      return res.status(500).json({ error: "AI returned empty response" });
     }
   } catch (err) {
     fs.unlink(filePath, () => {});
