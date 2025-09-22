@@ -17,7 +17,6 @@ export default function ReportPreview({ content }) {
       .save();
   };
 
-  // 🔹 Define category display order
   const categoryOrder = [
     "Haematology",
     "Iron Status",
@@ -53,7 +52,6 @@ export default function ReportPreview({ content }) {
       >
         <h2>Medical Laboratory Analysis Report</h2>
 
-        {/* Patient Info */}
         <h3>Patient Information</h3>
         <p>
           <b>Name:</b> {content.patient?.name || "Not specified"}
@@ -68,53 +66,23 @@ export default function ReportPreview({ content }) {
           <b>Date:</b> {content.patient?.date || "Not specified"}
         </p>
 
-        {/* Categories */}
-        <h3>Detailed Lab Results</h3>
+        {/* Category Summaries */}
+        <h3>Detailed Lab Category Summaries</h3>
         {categoryOrder.map((cat) => {
-          const section = content.categories?.[cat];
-          if (!section || (Array.isArray(section) && section.length === 0)) {
-            return null; // skip empty categories
-          }
+          const section = content.categorized_analysis?.find(
+            (c) => c.category === cat
+          );
+          if (!section) return null;
 
           return (
             <div key={cat} style={{ marginBottom: "10px" }}>
               <h4 style={{ marginBottom: "4px", color: "#222" }}>{cat}</h4>
-
-              {/* Special case: Urinalysis might be an object */}
-              {cat === "Urinalysis" &&
-              typeof section === "object" &&
-              !Array.isArray(section) ? (
-                <ul>
-                  <li>
-                    <b>Appearance:</b> {section.Appearance || "Not provided"}
-                  </li>
-                  <li>
-                    <b>Urine Chemical:</b>{" "}
-                    {section["Urine Chemical"] || "Not provided"}
-                  </li>
-                  <li>
-                    <b>Microscopic:</b> {section.Microscopic || "Not provided"}
-                  </li>
-                </ul>
-              ) : (
-                <ul>
-                  {section.map((t, idx) => (
-                    <li key={idx}>
-                      <b>{t.test}</b>: {t.result}
-                      {t.reference_range && t.reference_range !== "Not provided"
-                        ? ` (Ref: ${t.reference_range})`
-                        : ""}
-                      <br />
-                      <i>{t.interpretation || ""}</i>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <p>{section.summary}</p>
             </div>
           );
         })}
 
-        {/* Abnormal findings */}
+        {/* Abnormal Findings */}
         <h3>Abnormal Findings</h3>
         {content.abnormal_findings?.length > 0 ? (
           <ul>
@@ -134,7 +102,7 @@ export default function ReportPreview({ content }) {
         )}
 
         {/* Summary */}
-        <h3>Summary</h3>
+        <h3>Overall Summary</h3>
         <p>{content.summary || "Not specified"}</p>
 
         {/* Recommendations */}

@@ -22,79 +22,22 @@ const upload = multer({ storage });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const PORT = process.env.PORT || 3001;
 
-// 🔹 Prompt
-function buildPrompt(note = "") {
-  return `You are a clinical assistant specialized in interpreting blood test results.
-Analyze the attached blood test report and return a structured JSON object ONLY (no extra text).
-Respond ONLY with valid JSON. No markdown, comments, or prose outside the JSON.
-
-Group the findings under clinical categories if possible, for example:
-- HAEMATOLOGY
-- IRON STATUS
-- RENAL FUNCTION & METABOLIC
-- LIVER FUNCTION
-- LIPIDS & CARDIOVASCULAR RISK
-- INFLAMMATORY MARKER & CVD RISK
-- DIABETES & PANCREATIC
-- INFECTIOUS DISEASE SEROLOGY
-- THYROID FUNCTION
-- TUMOUR MARKERS
-- IMMUNOSEROLOGY
-- URINALYSIS (Appearance, Urine Chemical, Microscopic)
-
-The JSON format must be:
-
-{
-  "patient": {
-    "name": "string or 'Not specified'",
-    "age": "string or 'Not specified'",
-    "sex": "string or 'Not specified'",
-    "date": "string or 'Not specified'"
-  },
-  "abnormal_findings": [
-    {
-      "category": "e.g. LIVER FUNCTION",
-      "test": "string",
-      "result": "string",
-      "reference_range": "string or 'Not provided'",
-      "note": "string explanation why abnormal"
-    }
-  ],
-  "summary": "Concise clinical summary (3–5 sentences)",
-  "recommendations": "Further tests or lifestyle/medication considerations",
-  "follow_up": "Timeline for follow-up (e.g. 2 weeks)"
-}
-
-${note}`;
-}
-
-// 🔹 Safe JSON extraction
-function safeParseJSON(text) {
-  if (!text) return null;
-
-  // If it's already parsed JSON
-  if (typeof text === "object") return text;
-
-  try {
-    return JSON.parse(text);
-  } catch {}
-
-  const match = text.match(/\{[\s\S]*\}/);
-  if (match) {
-    let cleaned = match[0]
-      .replace(/(\r\n|\n|\r)/gm, " ")
-      .replace(/'/g, '"')
-      .replace(/,\s*}/g, "}")
-      .replace(/,\s*]/g, "]");
-
-    try {
-      return JSON.parse(cleaned);
-    } catch (err) {
-      console.error("❌ Still invalid JSON after cleanup:", err.message);
-    }
-  }
-  return null;
-}
+// ✅ Fixed category enum
+const categoryEnum = [
+  "Haematology",
+  "Iron Status",
+  "Renal Function & Metabolic",
+  "Liver Function",
+  "Lipids & Cardiovascular Risk",
+  "Inflammatory Marker & CVD Risk",
+  "Diabetes & Pancreatic",
+  "Infectious Disease Serology",
+  "Thyroid Function",
+  "Tumour Markers",
+  "Immunoserology",
+  "Urinalysis",
+  "Other",
+];
 
 // 🔹 API Route
 app.post("/api/analyze", upload.single("file"), async (req, res) => {
@@ -108,30 +51,80 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
       purpose: "assistants",
     });
 
-    const prompt = buildPrompt();
-
+    // ✅ Ask model to analyze with schema
     const response = await openai.responses.create({
       model: "gpt-4o-mini",
+      temperature: 0.3,
       input: [
-        { role: "user", content: [{ type: "input_text", text: prompt }] },
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: "Analyze the attached blood test and return JSON only.",
+            },
+          ],
+        },
         { role: "user", content: [{ type: "input_file", file_id: file.id }] },
       ],
-      temperature: 0.4,
+      text: {
+        format: "json_schema",
+        json_schema: {
+          name: "lab_analysis_report",
+          schema: {
+            type: "object",
+            properties: {
+              patient: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  age: { type: "string" },
+                  sex: { type: "string" },
+                  date: { type: "string" },
+                },
+                required: ["name", "age", "sex", "date"],
+              },
+              abnormal_findings: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    category: { type: "string", enum: categoryEnum },
+                    test: { type: "string" },
+                    result: { type: "string" },
+                    reference_range: { type: "string" },
+                    note: { type: "string" },
+                  },
+                  required: ["category", "test", "result"],
+                },
+              },
+              categorized_analysis: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    category: { type: "string", enum: categoryEnum },
+                    summary: { type: "string" },
+                  },
+                  required: ["category", "summary"],
+                },
+              },
+              summary: { type: "string" },
+              recommendations: { type: "string" },
+              follow_up: { type: "string" },
+            },
+            required: ["patient", "summary", "recommendations", "follow_up"],
+          },
+        },
+      },
     });
 
     fs.unlink(filePath, () => {}); // cleanup temp file
 
-    // ✅ Prefer structured output, fallback to text cleanup
-    const parsed =
-      response.output_parsed || safeParseJSON(response.output_text);
-
-    if (parsed) {
-      if (!Array.isArray(parsed.abnormal_findings)) {
-        parsed.abnormal_findings = [];
-      }
-      return res.json({ report: parsed });
+    if (response.output_parsed) {
+      return res.json({ report: response.output_parsed });
     } else {
-      return res.status(500).json({ error: "AI returned invalid JSON" });
+      return res.status(500).json({ error: "AI returned no structured JSON" });
     }
   } catch (err) {
     fs.unlink(filePath, () => {});
