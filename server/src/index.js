@@ -45,15 +45,24 @@ Use this schema:
       "note": "string"
     }
   ],
-  "categorized_analysis": [
-    {
-      "category": "string",
-      "summary": "string"
-    }
+ "categorized_analysis": [
+    { "category": "HAEMATOLOGY", "summary": "string (2–4 sentence clinical interpretation for this category. Include mention of both normal and abnormal findings, explain relevance, and what this means for the patient’s overall health.)" },
+    { "category": "IRON STATUS", "summary": "string (2–4 sentence clinical interpretation for this category. Include mention of both normal and abnormal findings, explain relevance, and what this means for the patient’s overall health.)" },
+    { "category": "RENAL FUNCTION & METABOLIC", "summary": "string (2–4 sentence clinical interpretation for this category. Include mention of both normal and abnormal findings, explain relevance, and what this means for the patient’s overall health.)" },
+    { "category": "LIVER FUNCTION", "summary": "string (2–4 sentence clinical interpretation for this category. Include mention of both normal and abnormal findings, explain relevance, and what this means for the patient’s overall health.)" },
+    { "category": "LIPIDS & CARDIOVASCULAR RISK", "summary": "string (2–4 sentence clinical interpretation for this category. Include mention of both normal and abnormal findings, explain relevance, and what this means for the patient’s overall health.)" },
+    { "category": "INFLAMMATORY MARKER & CVD RISK", "summary": "string (2–4 sentence clinical interpretation for this category. Include mention of both normal and abnormal findings, explain relevance, and what this means for the patient’s overall health.)" },
+    { "category": "DIABETES & PANCREATIC", "summary": "string (2–4 sentence clinical interpretation for this category. Include mention of both normal and abnormal findings, explain relevance, and what this means for the patient’s overall health.)" },
+    { "category": "INFECTIOUS DISEASE SEROLOGY", "summary": "string (2–4 sentence clinical interpretation for this category. Include mention of both normal and abnormal findings, explain relevance, and what this means for the patient’s overall health.)" },
+    { "category": "THYROID FUNCTION", "summary": "string (2–4 sentence clinical interpretation for this category. Include mention of both normal and abnormal findings, explain relevance, and what this means for the patient’s overall health.)" },
+    { "category": "TUMOUR MARKERS", "summary": "string (2–4 sentence clinical interpretation for this category. Include mention of both normal and abnormal findings, explain relevance, and what this means for the patient’s overall health.)" },
+    { "category": "IMMUNOSEROLOGY", "summary": "string (2–4 sentence clinical interpretation for this category. Include mention of both normal and abnormal findings, explain relevance, and what this means for the patient’s overall health.)" },
+    { "category": "URINALYSIS", "summary": "string (2–4 sentence clinical interpretation for this category. Include mention of both normal and abnormal findings, explain relevance, and what this means for the patient’s overall health.)" },
+    { "category": "OTHER", "summary": "string (catch-all for any findings outside predefined categories, 1–2 sentences)" }
   ],
-  "summary": "string",
-  "recommendations": "string",
-  "follow_up": "string"
+  "summary": "Concise overall clinical summary (3–5 sentences).",
+  "recommendations": "Further tests or lifestyle/medication considerations.",
+  "follow_up": "Timeline for follow-up (e.g. 2 weeks)."
 }
   `;
 }
@@ -83,6 +92,7 @@ function safeParseJSON(text) {
   return null;
 }
 
+// 🔹 API Route
 app.post("/api/analyze", upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
   const filePath = req.file.path;
@@ -109,6 +119,14 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
     const parsed = safeParseJSON(response.output_text);
 
     if (parsed) {
+      // 🟢 Ensure arrays always exist
+      if (!Array.isArray(parsed.abnormal_findings)) {
+        parsed.abnormal_findings = [];
+      }
+      if (!Array.isArray(parsed.categorized_analysis)) {
+        parsed.categorized_analysis = [];
+      }
+
       return res.json({ report: parsed });
     } else {
       return res.status(500).json({ error: "AI returned invalid JSON" });

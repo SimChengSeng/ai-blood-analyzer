@@ -17,7 +17,6 @@ export default function ReportPreview({ content }) {
       .save();
   };
 
-  // 🔹 Expected order of categories
   const categoryOrder = [
     "Haematology",
     "Iron Status",
@@ -34,7 +33,7 @@ export default function ReportPreview({ content }) {
     "Other",
   ];
 
-  // 🔹 Normalize GPT output (case-insensitive, handles variations)
+  // Normalize categories
   const normalizedCategories = {};
   (content.categorized_analysis || []).forEach((c) => {
     if (!c.category) return;
@@ -75,29 +74,34 @@ export default function ReportPreview({ content }) {
         <p>
           <b>Date:</b> {content.patient?.date || "Not specified"}
         </p>
+        <hr />
 
         {/* Category Summaries */}
         <h3>Detailed Lab Category Summaries</h3>
         {categoryOrder.map((cat) => {
           const key = cat.toLowerCase();
-          if (!normalizedCategories[key]) return null;
+          const summary =
+            normalizedCategories[key] ||
+            "No significant findings in this category.";
           return (
-            <div key={cat} style={{ marginBottom: "10px" }}>
-              <h4 style={{ marginBottom: "4px", color: "#222" }}>{cat}</h4>
-              <p>{normalizedCategories[key]}</p>
+            <div key={cat} style={{ marginBottom: "20px" }}>
+              <h4 style={{ marginBottom: "6px", color: "#222" }}>{cat}</h4>
+              <p>{summary}</p>
+              <hr />
             </div>
           );
         })}
 
-        {/* If GPT added unexpected categories, show them too */}
+        {/* Extra categories not in the list */}
         {Object.keys(normalizedCategories).map((key) => {
           if (categoryOrder.find((c) => c.toLowerCase() === key)) return null;
           return (
-            <div key={key} style={{ marginBottom: "10px" }}>
-              <h4 style={{ marginBottom: "4px", color: "#222" }}>
+            <div key={key} style={{ marginBottom: "20px" }}>
+              <h4 style={{ marginBottom: "6px", color: "#222" }}>
                 {key.charAt(0).toUpperCase() + key.slice(1)}
               </h4>
               <p>{normalizedCategories[key]}</p>
+              <hr />
             </div>
           );
         })}
@@ -105,29 +109,88 @@ export default function ReportPreview({ content }) {
         {/* Abnormal Findings */}
         <h3>Abnormal Findings</h3>
         {content.abnormal_findings?.length > 0 ? (
-          <ul>
-            {content.abnormal_findings.map((f, idx) => (
-              <li key={idx}>
-                <b>{f.test}</b>: {f.result}
-                {f.reference_range && f.reference_range !== "Not provided"
-                  ? ` (Ref: ${f.reference_range})`
-                  : ""}
-                <br />
-                <i>{f.note}</i>
-              </li>
-            ))}
-          </ul>
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+              fontSize: "13px",
+            }}
+          >
+            <thead>
+              <tr>
+                <th
+                  style={{
+                    border: "1px solid #ccc",
+                    fontWeight: "bold",
+                    padding: "6px",
+                  }}
+                >
+                  Test
+                </th>
+                <th
+                  style={{
+                    border: "1px solid #ccc",
+                    fontWeight: "bold",
+                    padding: "6px",
+                  }}
+                >
+                  Result
+                </th>
+                <th
+                  style={{
+                    border: "1px solid #ccc",
+                    fontWeight: "bold",
+                    padding: "6px",
+                  }}
+                >
+                  Reference
+                </th>
+                <th
+                  style={{
+                    border: "1px solid #ccc",
+                    fontWeight: "bold",
+                    padding: "6px",
+                  }}
+                >
+                  Note
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {content.abnormal_findings.map((f, idx) => (
+                <tr key={idx}>
+                  <td style={{ border: "1px solid #ccc", padding: "6px" }}>
+                    {f.test}
+                  </td>
+                  <td style={{ border: "1px solid #ccc", padding: "6px" }}>
+                    {f.result}
+                  </td>
+                  <td style={{ border: "1px solid #ccc", padding: "6px" }}>
+                    {f.reference_range || "Not provided"}
+                  </td>
+                  <td style={{ border: "1px solid #ccc", padding: "6px" }}>
+                    {f.note}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         ) : (
           <p>No abnormal findings detected.</p>
         )}
+        <hr />
 
         {/* Overall Summary */}
-        <h3>Overall Summary</h3>
-        <p>{content.summary || "Not specified"}</p>
+        <div style={{ pageBreakBefore: "always" }}>
+          <h3>Overall Summary</h3>
+          <p>{content.summary || "Not specified"}</p>
+        </div>
+        <hr />
 
         {/* Recommendations */}
         <h3>Recommendations</h3>
         <p>{content.recommendations || "Not specified"}</p>
+        <hr />
 
         {/* Follow-up */}
         <h3>Follow-up</h3>
