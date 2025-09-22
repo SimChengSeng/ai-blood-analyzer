@@ -17,7 +17,7 @@ export default function ReportPreview({ content }) {
       .save();
   };
 
-  // Normalize categories
+  // Normalize categories.
   const normalizedCategories = {};
   (content.categorized_analysis || []).forEach((c) => {
     if (!c.category) return;

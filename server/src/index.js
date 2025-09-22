@@ -49,7 +49,7 @@ Schema:
   `;
 }
 
-// 🔹 Fallback JSON cleanup
+// 🔹 Fallback JSON cleanup.
 function safeParseJSON(text) {
   if (!text) return null;
 
