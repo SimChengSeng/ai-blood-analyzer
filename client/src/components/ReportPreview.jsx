@@ -17,6 +17,14 @@ export default function ReportPreview({ content }) {
       .save();
   };
 
+  // Normalize categories
+  const normalizedCategories = {};
+  (content.categorized_analysis || []).forEach((c) => {
+    if (!c.category) return;
+    const key = c.category.trim().toLowerCase();
+    normalizedCategories[key] = c.summary;
+  });
+
   const categoryOrder = [
     "Haematology",
     "Iron Status",
@@ -32,14 +40,6 @@ export default function ReportPreview({ content }) {
     "Urinalysis",
     "Other",
   ];
-
-  // Normalize categories
-  const normalizedCategories = {};
-  (content.categorized_analysis || []).forEach((c) => {
-    if (!c.category) return;
-    const key = c.category.trim().toLowerCase();
-    normalizedCategories[key] = c.summary;
-  });
 
   return (
     <Paper elevation={3} sx={{ mt: 4, p: 3 }}>
@@ -77,29 +77,13 @@ export default function ReportPreview({ content }) {
         <hr />
 
         {/* Category Summaries */}
-        <h3>Detailed Lab Category Summaries</h3>
+        <h3>Lab Category Summaries</h3>
         {categoryOrder.map((cat) => {
           const key = cat.toLowerCase();
-          const summary =
-            normalizedCategories[key] ||
-            "No significant findings in this category.";
+          if (!normalizedCategories[key]) return null;
           return (
             <div key={cat} style={{ marginBottom: "20px" }}>
               <h4 style={{ marginBottom: "6px", color: "#222" }}>{cat}</h4>
-              <p>{summary}</p>
-              <hr />
-            </div>
-          );
-        })}
-
-        {/* Extra categories not in the list */}
-        {Object.keys(normalizedCategories).map((key) => {
-          if (categoryOrder.find((c) => c.toLowerCase() === key)) return null;
-          return (
-            <div key={key} style={{ marginBottom: "20px" }}>
-              <h4 style={{ marginBottom: "6px", color: "#222" }}>
-                {key.charAt(0).toUpperCase() + key.slice(1)}
-              </h4>
               <p>{normalizedCategories[key]}</p>
               <hr />
             </div>
@@ -117,12 +101,12 @@ export default function ReportPreview({ content }) {
             }}
           >
             <thead>
-              <tr>
+              <tr style={{ background: "#f5f5f5" }}>
                 <th
                   style={{
                     border: "1px solid #ccc",
-                    fontWeight: "bold",
                     padding: "6px",
+                    fontWeight: "bold",
                   }}
                 >
                   Test
@@ -130,8 +114,8 @@ export default function ReportPreview({ content }) {
                 <th
                   style={{
                     border: "1px solid #ccc",
-                    fontWeight: "bold",
                     padding: "6px",
+                    fontWeight: "bold",
                   }}
                 >
                   Result
@@ -139,8 +123,8 @@ export default function ReportPreview({ content }) {
                 <th
                   style={{
                     border: "1px solid #ccc",
-                    fontWeight: "bold",
                     padding: "6px",
+                    fontWeight: "bold",
                   }}
                 >
                   Reference
@@ -148,8 +132,8 @@ export default function ReportPreview({ content }) {
                 <th
                   style={{
                     border: "1px solid #ccc",
-                    fontWeight: "bold",
                     padding: "6px",
+                    fontWeight: "bold",
                   }}
                 >
                   Note
@@ -181,10 +165,8 @@ export default function ReportPreview({ content }) {
         <hr />
 
         {/* Overall Summary */}
-        <div style={{ pageBreakBefore: "always" }}>
-          <h3>Overall Summary</h3>
-          <p>{content.summary || "Not specified"}</p>
-        </div>
+        <h3>Overall Summary</h3>
+        <p>{content.summary || "Not specified"}</p>
         <hr />
 
         {/* Recommendations */}
