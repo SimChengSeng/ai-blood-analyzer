@@ -24,12 +24,25 @@ const PORT = process.env.PORT || 3001;
 
 // 🔹 Prompt
 function buildPrompt(note = "") {
-  return `You are a clinical assistant specialized in interpreting blood test results.  
-Analyze the attached blood test report and return ONLY a JSON object (no extra text).  
+  return `You are a clinical assistant specialized in interpreting blood test results.
+Analyze the attached blood test report and return a structured JSON object ONLY (no extra text).
+Respond ONLY with valid JSON. No markdown, comments, or prose outside the JSON.
 
-⚠️ Respond ONLY with valid JSON. No markdown, comments, or prose outside the JSON.  
+Group the findings under clinical categories if possible, for example:
+- HAEMATOLOGY
+- IRON STATUS
+- RENAL FUNCTION & METABOLIC
+- LIVER FUNCTION
+- LIPIDS & CARDIOVASCULAR RISK
+- INFLAMMATORY MARKER & CVD RISK
+- DIABETES & PANCREATIC
+- INFECTIOUS DISEASE SEROLOGY
+- THYROID FUNCTION
+- TUMOUR MARKERS
+- IMMUNOSEROLOGY
+- URINALYSIS (Appearance, Urine Chemical, Microscopic)
 
-The JSON must follow this format:
+The JSON format must be:
 
 {
   "patient": {
@@ -38,61 +51,46 @@ The JSON must follow this format:
     "sex": "string or 'Not specified'",
     "date": "string or 'Not specified'"
   },
-  "categories": {
-    "Haematology": [
-      {
-        "test": "string",
-        "result": "string",
-        "reference_range": "string or 'Not provided'",
-        "interpretation": "short clinical note"
-      }
-    ],
-    "Iron Status": [...],
-    "Renal Function & Metabolic": [...],
-    "Liver Function": [...],
-    "Lipids & Cardiovascular Risk": [...],
-    "Inflammatory Marker & CVD Risk": [...],
-    "Diabetes & Pancreatic": [...],
-    "Infectious Disease Serology": [...],
-    "Thyroid Function": [...],
-    "Tumour Markers": [...],
-    "Immunoserology": [...],
-    "Urinalysis": {
-      "Appearance": "summary or 'Not provided'",
-      "Urine Chemical": "summary or 'Not provided'",
-      "Microscopic": "summary or 'Not provided'"
-    }
-  },
   "abnormal_findings": [
     {
+      "category": "e.g. LIVER FUNCTION",
       "test": "string",
       "result": "string",
       "reference_range": "string or 'Not provided'",
-      "note": "why abnormal"
+      "note": "string explanation why abnormal"
     }
   ],
-  "summary": "Clinical summary (3–4 sentences, key highlights from abnormal and important findings)",
-  "recommendations": "Follow-up tests or lifestyle/medication considerations",
-  "follow_up": "Suggested timeframe (e.g. 2–4 weeks)"
+  "summary": "Concise clinical summary (3–5 sentences)",
+  "recommendations": "Further tests or lifestyle/medication considerations",
+  "follow_up": "Timeline for follow-up (e.g. 2 weeks)"
 }
-
-Instructions:
-- Group all available tests under the correct category (if test not in list, put under 'Other').
-- Always include an array for each category, even if empty.
-- Under abnormal_findings, only list tests outside reference range or clinically relevant.
-- Summaries should be clear, concise, and clinically useful.
 
 ${note}`;
 }
 
-// 🔹 Extract JSON safely
-function extractJSON(text) {
+// 🔹 Safe JSON extraction
+function safeParseJSON(text) {
+  if (!text) return null;
+
+  // If it's already parsed JSON
+  if (typeof text === "object") return text;
+
+  try {
+    return JSON.parse(text);
+  } catch {}
+
   const match = text.match(/\{[\s\S]*\}/);
   if (match) {
+    let cleaned = match[0]
+      .replace(/(\r\n|\n|\r)/gm, " ")
+      .replace(/'/g, '"')
+      .replace(/,\s*}/g, "}")
+      .replace(/,\s*]/g, "]");
+
     try {
-      return JSON.parse(match[0]);
+      return JSON.parse(cleaned);
     } catch (err) {
-      console.error("❌ JSON parse failed:", err.message);
+      console.error("❌ Still invalid JSON after cleanup:", err.message);
     }
   }
   return null;
@@ -110,106 +108,31 @@ app.post("/api/analyze", upload.single("file"), async (req, res) => {
       purpose: "assistants",
     });
 
-    let response;
+    const prompt = buildPrompt();
 
-    try {
-      // ✅ Try with schema enforcement
-      response = await openai.responses.create({
-        model: "gpt-4o-mini",
-        input: [
-          {
-            role: "user",
-            content: [{ type: "input_text", text: buildPrompt() }],
-          },
-          { role: "user", content: [{ type: "input_file", file_id: file.id }] },
-        ],
-        temperature: 0.4,
-        text: {
-          format: "json_schema",
-          json_schema: {
-            name: "lab_analysis_report",
-            schema: {
-              type: "object",
-              properties: {
-                patient: {
-                  type: "object",
-                  properties: {
-                    name: { type: "string" },
-                    age: { type: "string" },
-                    sex: { type: "string" },
-                    date: { type: "string" },
-                  },
-                  required: ["name", "age", "sex", "date"],
-                },
-                abnormal_findings: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      test: { type: "string" },
-                      result: { type: "string" },
-                      reference_range: { type: "string" },
-                      note: { type: "string" },
-                    },
-                    required: ["test", "result"],
-                  },
-                },
-                summary: { type: "string" },
-                recommendations: { type: "string" },
-                follow_up: { type: "string" },
-              },
-              required: ["patient", "summary", "recommendations", "follow_up"],
-            },
-          },
-        },
-      });
-    } catch (err) {
-      // ❌ If schema not supported → fallback to plain JSON text mode
-      if (err.message.includes("Unknown parameter")) {
-        console.warn(
-          "⚠️ Schema mode not supported, falling back to plain JSON parsing."
-        );
-        response = await openai.responses.create({
-          model: "gpt-4o-mini",
-          input: [
-            {
-              role: "user",
-              content: [{ type: "input_text", text: buildPrompt() }],
-            },
-            {
-              role: "user",
-              content: [{ type: "input_file", file_id: file.id }],
-            },
-          ],
-          temperature: 0.4,
-        });
-      } else {
-        throw err;
-      }
-    }
+    const response = await openai.responses.create({
+      model: "gpt-4o-mini",
+      input: [
+        { role: "user", content: [{ type: "input_text", text: prompt }] },
+        { role: "user", content: [{ type: "input_file", file_id: file.id }] },
+      ],
+      temperature: 0.4,
+    });
 
     fs.unlink(filePath, () => {}); // cleanup temp file
 
-    let parsed;
+    // ✅ Prefer structured output, fallback to text cleanup
+    const parsed =
+      response.output_parsed || safeParseJSON(response.output_text);
 
-    if (response.output_parsed) {
-      parsed = response.output_parsed;
+    if (parsed) {
+      if (!Array.isArray(parsed.abnormal_findings)) {
+        parsed.abnormal_findings = [];
+      }
+      return res.json({ report: parsed });
     } else {
-      const txt =
-        response.output_text || response?.choices?.[0]?.message?.content || "";
-      parsed = extractJSON(txt);
+      return res.status(500).json({ error: "AI returned invalid JSON" });
     }
-
-    if (!parsed) {
-      return res.status(500).json({ error: "AI returned invalid JSON." });
-    }
-
-    // 🟢 Ensure abnormal_findings always exists
-    if (!Array.isArray(parsed.abnormal_findings)) {
-      parsed.abnormal_findings = [];
-    }
-
-    return res.json({ report: parsed });
   } catch (err) {
     fs.unlink(filePath, () => {});
     console.error("❌ Analysis failed:", err.message);
