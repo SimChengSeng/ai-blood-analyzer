@@ -9,7 +9,6 @@ import path from "path";
 const app = express();
 app.use(cors());
 
-// ✅ Keep original PDF extension
 const storage = multer.diskStorage({
   destination: "uploads/",
   filename: (req, file, cb) => {
@@ -22,36 +21,79 @@ const upload = multer({ storage });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const PORT = process.env.PORT || 3001;
 
-// 🔹 API Route
+// 🔹 Prompt enforces schema
+function buildPrompt() {
+  return `
+You are a clinical assistant specialized in interpreting blood test results.
+Analyze the attached blood test report and return ONLY valid JSON (no text outside JSON).
+
+Use this schema:
+
+{
+  "patient": {
+    "name": "string",
+    "age": "string",
+    "sex": "string",
+    "date": "string"
+  },
+  "abnormal_findings": [
+    {
+      "category": "string",
+      "test": "string",
+      "result": "string",
+      "reference_range": "string",
+      "note": "string"
+    }
+  ],
+  "categorized_analysis": [
+    {
+      "category": "string",
+      "summary": "string"
+    }
+  ],
+  "summary": "string",
+  "recommendations": "string",
+  "follow_up": "string"
+}
+  `;
+}
+
+// 🔹 Fallback JSON cleaning
+function safeParseJSON(text) {
+  if (!text) return null;
+
+  try {
+    return JSON.parse(text);
+  } catch {}
+
+  const match = text.match(/\{[\s\S]*\}/);
+  if (match) {
+    let cleaned = match[0]
+      .replace(/(\r\n|\n|\r)/gm, " ")
+      .replace(/'/g, '"')
+      .replace(/,\s*}/g, "}")
+      .replace(/,\s*]/g, "]");
+
+    try {
+      return JSON.parse(cleaned);
+    } catch (err) {
+      console.error("❌ Still invalid JSON after cleanup:", err.message);
+    }
+  }
+  return null;
+}
+
 app.post("/api/analyze", upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
   const filePath = req.file.path;
 
   try {
-    // Upload PDF to OpenAI
     const file = await openai.files.create({
       file: fs.createReadStream(filePath),
       purpose: "assistants",
     });
 
-    const prompt = `
-You are a clinical assistant specialized in interpreting blood test results.
-Analyze the attached blood test report and return a structured JSON ONLY (no extra text).
-
-Group results under clinical categories (if possible), e.g.:
-- Haematology
-- Iron Status
-- Renal Function & Metabolic
-- Liver Function
-- Lipids & Cardiovascular Risk
-- Inflammatory Marker & CVD Risk
-- Diabetes & Pancreatic
-- Infectious Disease Serology
-- Thyroid Function
-- Tumour Markers
-- Immunoserology
-- Urinalysis (Appearance, Urine Chemical, Microscopic)
-    `;
+    const prompt = buildPrompt();
 
     const response = await openai.responses.create({
       model: "gpt-4o-mini",
@@ -59,71 +101,17 @@ Group results under clinical categories (if possible), e.g.:
         { role: "user", content: [{ type: "input_text", text: prompt }] },
         { role: "user", content: [{ type: "input_file", file_id: file.id }] },
       ],
-      temperature: 0.4,
-
-      // ✅ New schema placement
-      text: {
-        format: "json_schema",
-        schema: {
-          type: "object",
-          properties: {
-            patient: {
-              type: "object",
-              properties: {
-                name: { type: "string" },
-                age: { type: "string" },
-                sex: { type: "string" },
-                date: { type: "string" },
-              },
-              required: ["name", "age", "sex", "date"],
-            },
-            abnormal_findings: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  category: { type: "string" },
-                  test: { type: "string" },
-                  result: { type: "string" },
-                  reference_range: { type: "string" },
-                  note: { type: "string" },
-                },
-                required: ["category", "test", "result"],
-              },
-            },
-            categorized_analysis: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  category: { type: "string" },
-                  summary: { type: "string" },
-                },
-                required: ["category", "summary"],
-              },
-            },
-            summary: { type: "string" },
-            recommendations: { type: "string" },
-            follow_up: { type: "string" },
-          },
-          required: [
-            "patient",
-            "abnormal_findings",
-            "categorized_analysis",
-            "summary",
-            "recommendations",
-            "follow_up",
-          ],
-        },
-      },
+      temperature: 0.3,
     });
 
-    fs.unlink(filePath, () => {}); // cleanup temp file
+    fs.unlink(filePath, () => {}); // cleanup
 
-    if (response.output_parsed) {
-      return res.json({ report: response.output_parsed });
+    const parsed = safeParseJSON(response.output_text);
+
+    if (parsed) {
+      return res.json({ report: parsed });
     } else {
-      return res.status(500).json({ error: "AI returned no structured JSON" });
+      return res.status(500).json({ error: "AI returned invalid JSON" });
     }
   } catch (err) {
     fs.unlink(filePath, () => {});

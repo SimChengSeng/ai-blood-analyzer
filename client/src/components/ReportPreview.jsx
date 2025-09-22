@@ -17,7 +17,7 @@ export default function ReportPreview({ content }) {
       .save();
   };
 
-  // 🔹 Fixed categories (AI might output "LIVER FUNCTION" instead of "Liver Function")
+  // 🔹 Expected order of categories
   const categoryOrder = [
     "Haematology",
     "Iron Status",
@@ -34,8 +34,13 @@ export default function ReportPreview({ content }) {
     "Other",
   ];
 
-  // 🔹 Normalize case (so "LIVER FUNCTION" == "Liver Function")
-  const normalize = (str) => str?.toLowerCase().replace(/\s+/g, " ").trim();
+  // 🔹 Normalize GPT output (case-insensitive, handles variations)
+  const normalizedCategories = {};
+  (content.categorized_analysis || []).forEach((c) => {
+    if (!c.category) return;
+    const key = c.category.trim().toLowerCase();
+    normalizedCategories[key] = c.summary;
+  });
 
   return (
     <Paper elevation={3} sx={{ mt: 4, p: 3 }}>
@@ -74,15 +79,25 @@ export default function ReportPreview({ content }) {
         {/* Category Summaries */}
         <h3>Detailed Lab Category Summaries</h3>
         {categoryOrder.map((cat) => {
-          const section = content.categorized_analysis?.find(
-            (c) => normalize(c.category) === normalize(cat)
-          );
-          if (!section) return null;
-
+          const key = cat.toLowerCase();
+          if (!normalizedCategories[key]) return null;
           return (
             <div key={cat} style={{ marginBottom: "10px" }}>
               <h4 style={{ marginBottom: "4px", color: "#222" }}>{cat}</h4>
-              <p>{section.summary}</p>
+              <p>{normalizedCategories[key]}</p>
+            </div>
+          );
+        })}
+
+        {/* If GPT added unexpected categories, show them too */}
+        {Object.keys(normalizedCategories).map((key) => {
+          if (categoryOrder.find((c) => c.toLowerCase() === key)) return null;
+          return (
+            <div key={key} style={{ marginBottom: "10px" }}>
+              <h4 style={{ marginBottom: "4px", color: "#222" }}>
+                {key.charAt(0).toUpperCase() + key.slice(1)}
+              </h4>
+              <p>{normalizedCategories[key]}</p>
             </div>
           );
         })}
@@ -93,10 +108,7 @@ export default function ReportPreview({ content }) {
           <ul>
             {content.abnormal_findings.map((f, idx) => (
               <li key={idx}>
-                <b>
-                  {f.category} – {f.test}
-                </b>
-                : {f.result}
+                <b>{f.test}</b>: {f.result}
                 {f.reference_range && f.reference_range !== "Not provided"
                   ? ` (Ref: ${f.reference_range})`
                   : ""}
