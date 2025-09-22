@@ -24,11 +24,12 @@ const PORT = process.env.PORT || 3001;
 
 // 🔹 Prompt
 function buildPrompt(note = "") {
-  return `You are a clinical assistant specialized in interpreting blood test results. 
-Analyze the attached blood test report and return a JSON object ONLY (no extra text).
-Respond ONLY with valid JSON. No markdown, comments, or prose outside the JSON.
+  return `You are a clinical assistant specialized in interpreting blood test results.  
+Analyze the attached blood test report and return ONLY a JSON object (no extra text).  
 
-The JSON format must be:
+⚠️ Respond ONLY with valid JSON. No markdown, comments, or prose outside the JSON.  
+
+The JSON must follow this format:
 
 {
   "patient": {
@@ -37,18 +38,49 @@ The JSON format must be:
     "sex": "string or 'Not specified'",
     "date": "string or 'Not specified'"
   },
+  "categories": {
+    "Haematology": [
+      {
+        "test": "string",
+        "result": "string",
+        "reference_range": "string or 'Not provided'",
+        "interpretation": "short clinical note"
+      }
+    ],
+    "Iron Status": [...],
+    "Renal Function & Metabolic": [...],
+    "Liver Function": [...],
+    "Lipids & Cardiovascular Risk": [...],
+    "Inflammatory Marker & CVD Risk": [...],
+    "Diabetes & Pancreatic": [...],
+    "Infectious Disease Serology": [...],
+    "Thyroid Function": [...],
+    "Tumour Markers": [...],
+    "Immunoserology": [...],
+    "Urinalysis": {
+      "Appearance": "summary or 'Not provided'",
+      "Urine Chemical": "summary or 'Not provided'",
+      "Microscopic": "summary or 'Not provided'"
+    }
+  },
   "abnormal_findings": [
     {
       "test": "string",
       "result": "string",
       "reference_range": "string or 'Not provided'",
-      "note": "string explanation why abnormal"
+      "note": "why abnormal"
     }
   ],
-  "summary": "Concise clinical summary (2–3 sentences)",
-  "recommendations": "Further tests or lifestyle/medication considerations",
-  "follow_up": "Timeline for follow-up (e.g. 2 weeks)"
+  "summary": "Clinical summary (3–4 sentences, key highlights from abnormal and important findings)",
+  "recommendations": "Follow-up tests or lifestyle/medication considerations",
+  "follow_up": "Suggested timeframe (e.g. 2–4 weeks)"
 }
+
+Instructions:
+- Group all available tests under the correct category (if test not in list, put under 'Other').
+- Always include an array for each category, even if empty.
+- Under abnormal_findings, only list tests outside reference range or clinically relevant.
+- Summaries should be clear, concise, and clinically useful.
 
 ${note}`;
 }
